@@ -1,22 +1,25 @@
 const _ = require('lodash');
+var fs = require('fs');
+
+var fileDraftLines = [];
 
 function apiCall(params) {
-  console.log("call")
   params.resource[params.method](_.merge({}, params.params), (err, res) => {
     if (err && err == "User Rate Limit Exceeded. Rate of requests for user exceed configured project quota. You may consider re-evaluating expected per-user traffic to the API and adjust project quota limits accordingly. You may monitor aggregate quota usage and adjust limits in the API Console: https://console.developers.google.com/apis/api/drive.googleapis.com/quotas?project=992877924458") {
-      return setTimeout(() => listTeamDrives(drive, callback, pageToken), 100)
+      return setTimeout(() => apiCall(params), 100)
     }
     if (err) return console.log('The API returned an error: ' + err);
 
     let resData = res.data;
+    let callback = params.callback.bind({})
     if(params.key) {
       resData = resData[params.key]
     }
     if(res.data.nextPageToken) {
       apiCall(_.merge(params, {
-        pageToken: res.data.nextPageToken,
+        params: _.merge((params.params || {}), {pageToken: res.data.nextPageToken}),
         callback: (response) => {
-          params.callback(response.concat(resData))
+          callback(resData.concat(response))
         }
       }))
     }
@@ -24,6 +27,13 @@ function apiCall(params) {
       params.callback(resData)
     }
   })
+}
+
+
+exports.appendToFile = (text, filename) => {
+  fileDraftLines.push(text)
+  fs.writeFile(filename, fileDraftLines.join("\n"), (err, res) => {
+  });
 }
 
 exports.listTeamDrives = (drive, callback) => {
@@ -60,7 +70,9 @@ exports.processList = (list, processMethod, callback) => {
   let nextActions = [callback]
   _.each(_.reverse(list), (listItem, index) => {
     nextActions.push(() => {
-      processMethod(listItem, list.length - index, () => {nextActions[index]()})
+      processMethod(listItem, list.length - index, () => {
+        setImmediate(nextActions[index])
+      })
     })
   })
   nextActions[nextActions.length - 1]()
